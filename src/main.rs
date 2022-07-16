@@ -6,12 +6,12 @@ fn main() {
 
     let channel = socket.set_channel("realtime:public");
 
-    channel.on(
+    channel.join().on(
         "INSERT",
         Box::new(|data| {
             println!("result: {:?}", data);
         }),
     );
 
-    socket.listen().unwrap();
+    socket.listen();
 }

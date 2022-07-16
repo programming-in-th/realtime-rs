@@ -1,7 +1,12 @@
 use crate::error::Error;
 use serde_json::{json, Map, Value};
+use std::net::TcpStream;
+use std::sync::{Arc, Mutex};
+use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
-type Callback = Box<dyn FnMut(&Map<String, Value>)>;
+type Callback = Box<dyn Fn(&Map<String, Value>)>;
+pub type SocketModule = Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>;
+
 pub struct CallBackListener {
     pub callback: Callback,
     pub event: String,
@@ -27,16 +32,28 @@ fn generate_json(topic: &str) -> String {
 }
 
 pub struct Channel {
+    pub socket: SocketModule,
     pub listeners: Vec<CallBackListener>,
     pub topic: String,
 }
 
 impl Channel {
-    pub fn new(topic: impl Into<String>) -> Self {
+    pub fn new(topic: impl Into<String>, socket: &SocketModule) -> Self {
         Channel {
+            socket: Arc::clone(socket),
             listeners: Vec::new(),
             topic: topic.into(),
         }
+    }
+
+    pub fn join(&mut self) -> &mut Self {
+        let json = generate_json(&self.topic);
+        self.socket
+            .lock()
+            .unwrap()
+            .write_message(Message::Text(json))
+            .unwrap();
+        self
     }
 
     pub fn on(&mut self, event: impl Into<String>, callback: Callback) -> &mut Self {
