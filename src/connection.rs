@@ -1,5 +1,5 @@
-use crate::error::Error;
 use crate::channel::Channel;
+use crate::error::Error;
 use std::net::TcpStream;
 use tungstenite::{connect, stream::MaybeTlsStream, WebSocket};
 use url::Url;
@@ -27,8 +27,8 @@ impl Socket {
         Ok(())
     }
 
-    pub fn set_channel<T: Into<String>>(&mut self, topic: impl Into<String>) -> Result<&mut Channel, Error> {
-        let channel = Channel::new(topic)?;
+    pub fn set_channel(&mut self, topic: impl Into<String>) -> Result<&mut Channel, Error> {
+        let channel = Channel::new(topic);
         self.channels.push(channel);
         Ok(self.channels.last_mut().unwrap())
     }

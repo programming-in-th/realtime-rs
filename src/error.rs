@@ -5,6 +5,7 @@ pub enum Error {
     TungsteniteError(tungstenite::Error),
     IoError(std::io::Error),
     ParseError(url::ParseError),
+    NotFoundError,
 }
 
 impl From<tungstenite::Error> for Error {
