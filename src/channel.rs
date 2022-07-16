@@ -1,7 +1,7 @@
 use crate::error::Error;
-use serde_json::json;
+use serde_json::{json, Map, Value};
 
-type Callback = Box<dyn FnMut(&str)>;
+type Callback = Box<dyn FnMut(&Map<String, Value>)>;
 pub struct CallBackListener {
     pub callback: Callback,
     pub event: String,
@@ -20,7 +20,7 @@ fn generate_json(topic: &str) -> String {
     let json = json!({
         "topic": topic,
         "event": "phx_join",
-        "playload": {},
+        "payload": {},
         "ref": null
     });
     return json.to_string();
@@ -55,11 +55,9 @@ impl Channel {
         self.listeners.remove(index);
         Ok(self)
     }
-}
 
-impl From<Channel> for String {
-    fn from(channel: Channel) -> Self {
-        generate_json(&channel.topic)
+    pub fn get_join(&self) -> String {
+        generate_json(&self.topic)
     }
 }
 

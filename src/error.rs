@@ -1,6 +1,7 @@
 use tungstenite;
 use url;
 
+#[derive(Debug)]
 pub enum Error {
     TungsteniteError(tungstenite::Error),
     IoError(std::io::Error),
