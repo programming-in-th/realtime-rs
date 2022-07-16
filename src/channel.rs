@@ -69,7 +69,7 @@ mod test {
     fn generate_json_correctly() {
         let topic = "random";
         let json = generate_json(topic);
-        let expected = "{\"event\":\"phx_join\",\"playload\":{},\"ref\":null,\"topic\":\"random\"}";
+        let expected = "{\"event\":\"phx_join\",\"payload\":{},\"ref\":null,\"topic\":\"random\"}";
         assert_eq!(json, expected);
     }
 }
