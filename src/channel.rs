@@ -1,7 +1,10 @@
 use crate::error::Error;
+use futures::channel::mpsc::UnboundedSender;
 use serde_json::{json, Map, Value};
-use std::net::TcpStream;
-use std::sync::{Arc, Mutex};
+use std::{
+    net::TcpStream,
+    sync::{Arc, Mutex},
+};
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
 type Callback = Box<dyn Fn(&Map<String, Value>)>;
@@ -32,15 +35,15 @@ fn generate_json(topic: &str) -> String {
 }
 
 pub struct Channel {
-    pub socket: SocketModule,
+    pub socket: UnboundedSender<Message>,
     pub listeners: Vec<CallBackListener>,
     pub topic: String,
 }
 
 impl Channel {
-    pub fn new(topic: impl Into<String>, socket: &SocketModule) -> Self {
+    pub fn new(topic: impl Into<String>, socket: UnboundedSender<Message>) -> Self {
         Channel {
-            socket: Arc::clone(socket),
+            socket,
             listeners: Vec::new(),
             topic: topic.into(),
         }
@@ -48,11 +51,7 @@ impl Channel {
 
     pub fn join(&mut self) -> &mut Self {
         let json = generate_json(&self.topic);
-        self.socket
-            .lock()
-            .unwrap()
-            .write_message(Message::Text(json))
-            .unwrap();
+        self.socket.unbounded_send(Message::Text(json)).unwrap();
         self
     }
 

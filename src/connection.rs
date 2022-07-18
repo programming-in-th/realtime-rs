@@ -1,14 +1,24 @@
-use crate::channel::{Channel, SocketModule};
+use crate::channel::Channel;
 use crate::error::Error;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use futures_util::{future, pin_mut, stream::SplitSink, stream::SplitStream, StreamExt};
 use serde_json::{json, Value};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::time::Duration;
-use tungstenite::{connect, Message};
+use std::{cell::RefCell, rc::Rc, time::Duration};
+use tokio::{net::TcpStream, time::sleep};
+use tokio_tungstenite::{
+    connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
+};
 use url::Url;
 
+pub struct SocketIO {
+    pub socket_read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    pub socket_write: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+    pub socket_tx: UnboundedSender<Message>,
+    pub socket_rx: UnboundedReceiver<Message>,
+}
+
 pub struct Socket {
-    pub socket: Option<SocketModule>,
+    pub socket_io: Option<SocketIO>,
     pub url: Url,
     pub connected: bool,
     pub channels: Vec<Channel>,
@@ -17,88 +27,93 @@ pub struct Socket {
 impl Socket {
     pub fn new(url: impl Into<String>) -> Self {
         Socket {
-            socket: None,
+            socket_io: None,
             url: Url::parse(&url.into()).unwrap(),
             connected: false,
             channels: Vec::new(),
         }
     }
 
-    pub fn connect(&mut self) -> Result<(), Error> {
-        self.socket = Some(Arc::new(Mutex::new(connect(&self.url)?.0)));
+    pub async fn connect(&mut self) -> Result<(), Error> {
+        let (stdin_tx, stdin_rx) = futures::channel::mpsc::unbounded::<Message>();
+
+        let (ws_stream, _) = connect_async(&self.url).await?;
+        println!("WebSocket handshake has been successfully completed");
+        let (write, read) = ws_stream.split();
+
+        self.socket_io = Some(SocketIO {
+            socket_read: read,
+            socket_write: write,
+            socket_tx: stdin_tx,
+            socket_rx: stdin_rx,
+        });
+
         self.connected = true;
         Ok(())
     }
 
     pub fn set_channel(&mut self, topic: impl Into<String>) -> &mut Channel {
-        let channel = Channel::new(topic, self.socket.as_ref().unwrap());
+        let channel = Channel::new(topic, self.socket_io.as_ref().unwrap().socket_tx.clone());
         self.channels.push(channel);
         self.channels.last_mut().unwrap()
     }
 
-    pub fn listen(&mut self) {
-        let socket_listen = Arc::clone(self.socket.as_ref().unwrap());
-        let socket_keep_alive = Arc::clone(self.socket.as_ref().unwrap());
+    pub async fn listen(&mut self) {
+        let socket_io = self.socket_io.take().unwrap();
+        let (socket_rx, socket_tx, read, write) = (
+            socket_io.socket_rx,
+            socket_io.socket_tx,
+            socket_io.socket_read,
+            socket_io.socket_write,
+        );
 
-        let (tx, rx) = mpsc::channel();
+        let rx_to_ws = socket_rx.map(Ok).forward(write);
 
-        let keep_alive = thread::spawn(move || {
+        let channels = Rc::new(RefCell::new(&mut self.channels));
+        let ws_to_stdout = {
+            read.for_each(|message| async {
+                if let Ok(msg) = message {
+                    if let Ok(data) = serde_json::from_str::<Value>(&msg.to_string()) {
+                        if data["topic"].as_str().is_some()
+                            && data["payload"].as_object().is_some()
+                            && data["event"].as_str().is_some()
+                        {
+                            let topic = data["topic"].as_str().unwrap().to_string();
+                            let event = data["event"].as_str().unwrap().to_string();
+                            let payload = data["payload"].as_object().unwrap().clone();
+                            channels.borrow_mut().iter_mut().for_each(|channel| {
+                                if channel.topic == topic {
+                                    channel.listeners.iter_mut().for_each(|listener| {
+                                        if listener.event == event {
+                                            listener.callback.as_mut()(&payload);
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+            })
+        };
+
+        let awake = async move {
             let data = json!({
                 "topic": "phoenix",
                 "event": "heartbeat",
                 "payload": {"msg": "ping"},
                 "ref": null
             });
-
-            loop {
-                if let Ok(mut socket) = socket_keep_alive.try_lock() {
-                    socket
-                        .write_message(Message::Text(data.to_string()))
-                        .unwrap();
-                    println!("sent heartbeat");
-                    thread::sleep(Duration::from_secs(1));
-                }
+            while socket_tx
+                .unbounded_send(Message::Text(data.to_string()))
+                .is_ok()
+            {
+                sleep(Duration::from_secs(5)).await;
             }
-        });
+        };
 
-        let listen = thread::spawn(move || loop {
-            if let Ok(mut msg) = socket_listen.try_lock() {
-                if msg.can_read() {
-                    let msg = msg.read_message().unwrap();
-                    if let Ok(data) = serde_json::from_str::<Value>(&msg.to_string()) {
-                        let topic = match data["topic"].as_str() {
-                            Some(topic) => topic.to_string(),
-                            None => continue,
-                        };
-                        let event = match data["event"].as_str() {
-                            Some(event) => event.to_string(),
-                            None => continue,
-                        };
-                        let payload = match data["payload"].as_object() {
-                            Some(topic) => topic.clone(),
-                            None => continue,
-                        };
-                        tx.send((topic, event, payload)).unwrap();
-                    }
-                } else {
-                    println!("can't read");
-                }
-            }
-        });
+        tokio::spawn(awake);
 
-        for (topic, event, payload) in rx {
-            for channel in self.channels.iter_mut() {
-                if channel.topic == topic {
-                    for listener in channel.listeners.iter_mut() {
-                        if listener.event == event {
-                            listener.callback.as_mut()(&payload);
-                        }
-                    }
-                }
-            }
-        }
-
-        keep_alive.join().unwrap();
-        listen.join().unwrap();
+        pin_mut!(rx_to_ws, ws_to_stdout);
+        future::select(rx_to_ws, ws_to_stdout).await;
     }
 }
