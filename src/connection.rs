@@ -70,7 +70,7 @@ impl Socket {
         let rx_to_ws = socket_rx.map(Ok).forward(write);
 
         let channels = Rc::new(RefCell::new(&mut self.channels));
-        let ws_to_stdout = {
+        let ws_to_cb = {
             read.for_each(|message| async {
                 if let Ok(msg) = message {
                     if let Ok(data) = serde_json::from_str::<Value>(&msg.to_string()) {
@@ -113,7 +113,7 @@ impl Socket {
 
         tokio::spawn(awake);
 
-        pin_mut!(rx_to_ws, ws_to_stdout);
-        future::select(rx_to_ws, ws_to_stdout).await;
+        pin_mut!(rx_to_ws, ws_to_cb);
+        future::select(rx_to_ws, ws_to_cb).await;
     }
 }
