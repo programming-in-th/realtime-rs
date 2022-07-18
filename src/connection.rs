@@ -3,7 +3,7 @@ use crate::error::Error;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures_util::{future, pin_mut, stream::SplitSink, stream::SplitStream, StreamExt};
 use serde_json::{json, Value};
-use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::{net::TcpStream, sync::Mutex, time::sleep};
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
