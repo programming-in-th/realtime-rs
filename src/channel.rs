@@ -7,7 +7,7 @@ use std::{
 };
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
-type Callback = Box<dyn Fn(&Map<String, Value>)>;
+type Callback = Box<dyn Fn(&Map<String, Value>) + Send>;
 pub type SocketModule = Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>;
 
 pub struct CallBackListener {

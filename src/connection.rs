@@ -3,8 +3,8 @@ use crate::error::Error;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures_util::{future, pin_mut, stream::SplitSink, stream::SplitStream, StreamExt};
 use serde_json::{json, Value};
-use std::{cell::RefCell, rc::Rc, time::Duration};
-use tokio::{net::TcpStream, time::sleep};
+use std::{sync::Arc, time::Duration};
+use tokio::{net::TcpStream, sync::Mutex, time::sleep};
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
@@ -69,7 +69,12 @@ impl Socket {
 
         let rx_to_ws = socket_rx.map(Ok).forward(write);
 
-        let channels = Rc::new(RefCell::new(&mut self.channels));
+        let channels: Arc<Mutex<Vec<Channel>>> = Arc::new(Mutex::new(std::mem::replace(
+            &mut self.channels,
+            Vec::new(),
+        )));
+
+        // let channels = Rc::new(RefCell::new(&mut self.channels));
         let ws_to_cb = {
             read.for_each(|message| async {
                 if let Ok(msg) = message {
@@ -80,8 +85,9 @@ impl Socket {
                         {
                             let topic = data["topic"].as_str().unwrap().to_string();
                             let event = data["event"].as_str().unwrap().to_string();
-                            let payload = data["payload"].as_object().unwrap().clone();
-                            channels.borrow_mut().iter_mut().for_each(|channel| {
+                            let payload = data["payload"].as_object().unwrap();
+
+                            channels.lock().await.iter_mut().for_each(|channel| {
                                 if channel.topic == topic {
                                     channel.listeners.iter_mut().for_each(|listener| {
                                         if listener.event == event || listener.event == "*" {
