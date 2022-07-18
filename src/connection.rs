@@ -84,7 +84,7 @@ impl Socket {
                             channels.borrow_mut().iter_mut().for_each(|channel| {
                                 if channel.topic == topic {
                                     channel.listeners.iter_mut().for_each(|listener| {
-                                        if listener.event == event {
+                                        if listener.event == event || listener.event == "*" {
                                             listener.callback.as_mut()(&payload);
                                         }
                                     });
