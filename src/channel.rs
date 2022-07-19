@@ -7,16 +7,16 @@ use std::{
 };
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
-type Callback = Box<dyn Fn(&Map<String, Value>) + Send>;
+type Callback<'a> = Box<dyn Fn(&Map<String, Value>) + Send + 'a>;
 pub type SocketModule = Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>;
 
-pub struct CallBackListener {
-    pub callback: Callback,
+pub struct CallBackListener<'a> {
+    pub callback: Callback<'a>,
     pub event: String,
 }
 
-impl CallBackListener {
-    pub fn new(callback: Callback, event: impl Into<String>) -> Self {
+impl<'a> CallBackListener<'a> {
+    pub fn new(callback: Callback<'a>, event: impl Into<String>) -> Self {
         CallBackListener {
             callback,
             event: event.into(),
@@ -34,13 +34,13 @@ fn generate_json(topic: &str) -> String {
     return json.to_string();
 }
 
-pub struct Channel {
+pub struct Channel<'a> {
     pub socket: UnboundedSender<Message>,
-    pub listeners: Vec<CallBackListener>,
+    pub listeners: Vec<CallBackListener<'a>>,
     pub topic: String,
 }
 
-impl Channel {
+impl<'a> Channel<'a> {
     pub fn new(topic: impl Into<String>, socket: UnboundedSender<Message>) -> Self {
         Channel {
             socket,
@@ -55,7 +55,7 @@ impl Channel {
         self
     }
 
-    pub fn on(&mut self, event: impl Into<String>, callback: Callback) -> &mut Self {
+    pub fn on(&mut self, event: impl Into<String>, callback: Callback<'a>) -> &mut Self {
         self.listeners
             .push(CallBackListener::new(callback, event.into()));
         self

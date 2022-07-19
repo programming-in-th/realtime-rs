@@ -17,14 +17,14 @@ pub struct SocketIO {
     pub socket_rx: UnboundedReceiver<Message>,
 }
 
-pub struct Socket {
+pub struct Socket<'a> {
     pub socket_io: Option<SocketIO>,
     pub url: Url,
     pub connected: bool,
-    pub channels: Vec<Channel>,
+    pub channels: Vec<Channel<'a>>,
 }
 
-impl Socket {
+impl<'a> Socket<'a> {
     pub fn new(url: impl Into<String>) -> Self {
         Socket {
             socket_io: None,
@@ -52,7 +52,7 @@ impl Socket {
         Ok(())
     }
 
-    pub fn set_channel(&mut self, topic: impl Into<String>) -> &mut Channel {
+    pub fn set_channel(&mut self, topic: impl Into<String>) -> &mut Channel<'a> {
         let channel = Channel::new(topic, self.socket_io.as_ref().unwrap().socket_tx.clone());
         self.channels.push(channel);
         self.channels.last_mut().unwrap()
