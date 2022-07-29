@@ -118,8 +118,7 @@ impl<'a> Socket<'a> {
         };
 
         tokio::spawn(awake);
-
-        pin_mut!(rx_to_ws, ws_to_cb);
-        future::select(rx_to_ws, ws_to_cb).await;
+        tokio::spawn(rx_to_ws);
+        ws_to_cb.await;
     }
 }
